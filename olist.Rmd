@@ -1,0 +1,264 @@
+---
+title: "R Notebook"
+output:
+  html_document:
+    df_print: paged
+---
+
+
+Install / Load the required packages first by running the following chunk
+
+```{r include = FALSE}
+if(!require("tidyverse")){
+  install.packages("tidyverse")
+}
+
+library("tidyverse")
+if(!require("ggrepel")){
+  install.packages("ggrepel")
+}
+library("ggrepel")
+if(!require("lubridate")){
+  install.packages("lubridate")
+}
+library("lubridate")
+
+library(dplyr)
+library(readr)
+customers <- read_csv("olist_customers_dataset.csv")
+geolocation <- read_csv("olist_geolocation_dataset.csv")
+order_items <- read_csv("olist_order_items_dataset.csv")
+order_payments <- read_csv("olist_order_payments_dataset.csv")
+order_reviews <- read_csv("olist_order_reviews_dataset.csv")
+orders <- read_csv("olist_orders_dataset.csv")
+sellers <- read_csv("olist_sellers_dataset.csv")
+products <- read_csv("olist_products_dataset.csv")
+ 
+
+```
+
+
+Then upload the data of the case study located
+
+https://www.kaggle.com/olistbr/brazilian-ecommerce
+
+Q.1 Find and display how many orders were placed by the city of rio de janeiro
+
+```{r}
+rio <- orders %>%
+  full_join(customers) %>%
+  filter(customer_city == "rio de janeiro")%>%
+  count(customer_city)
+
+print(rio)
+```
+
+
+Q.2 Display in a table all available data for the customer code that made the most orders during the entire logging period
+
+```{r}
+orders%>%
+  full_join(customers)%>%
+  group_by(customer_unique_id)%>%
+  count(order_id)%>%
+  summarise(orders = sum(n))%>%
+  arrange(desc(orders))
+
+idmost<-"8d50f5eadf50201ccdcedfb9e2ac8455"
+
+sniping<- customers %>%
+  full_join(orders) %>%
+  full_join(order_items)%>%
+  full_join(order_payments)%>%
+  filter(customer_unique_id == idmost)
+
+print(sniping)
+```
+
+Q.3 Find and display the date (day, month, year) where most orders were placed throughout the recording period. Visualize the orders of this day as follows: horizontal axis unique order code, vertical axis order cost. The points should be colored in relation to the method of payment made for each purchase.
+
+```{r}
+orders <- mutate(orders, date = date(order_purchase_timestamp))
+
+dayOrders<- orders %>%
+  group_by(date)%>%
+  count(order_id)%>%
+  summarise(orderDay = sum(n))%>%
+  arrange(desc(orderDay))
+
+most <- orders%>%
+  filter(date == "2017-11-24")
+
+mostPat <- order_payments %>%
+  inner_join(most)
+
+ggplot(mostPat) +
+  aes(x = order_id, y = payment_value, colour = payment_type) +
+  geom_point(shape = "circle", size = 1.5) +
+  scale_color_hue(direction = 1) +
+  theme_minimal()
+
+```
+
+Q.4 Calculate and display the average score of each product category as it results from the evaluations
+
+```{r}
+joinProd<-order_reviews%>%
+  full_join(orders)%>%
+  full_join(order_items)%>%
+  full_join(products)
+  
+aveScore<-joinProd%>%
+  group_by(product_category_name)%>%
+  summarise(averageEV = mean(review_score))%>%
+  arrange(desc(averageEV))
+
+print(aveScore)
+
+```
+
+Q.5 Represent in a diagram the annual revenues of the company for 2017. Horizontal axis (day), vertical axis total revenue for products with delivered status, color of base year points, grid panel of the month ~ payment method
+
+```{r warning=FALSE}
+
+rev<- orders%>%
+  full_join(order_payments)%>%
+  full_join(order_items)%>%
+  full_join(products)
+rev <- mutate(rev, year = year(order_delivered_customer_date))
+rev <- mutate(rev, month = month(order_delivered_customer_date))
+rev <- mutate(rev, day = day(order_delivered_customer_date))
+
+rev17<-rev%>%
+  filter(year == "2017")%>%
+  filter(order_status=="delivered")%>%
+  group_by(month,product_category_name, payment_type)
+  
+ggplot(rev17) +
+  aes(x = day, y = price, colour = payment_type) +
+  geom_point(shape = "circle", size = 1.5) +
+  scale_color_viridis_d(option = "viridis", direction = 1) +
+  theme_minimal() +
+  facet_wrap(vars(month))
+
+```
+
+Q.6 Display all seller details (as shown by the sellers' table) with the highest average score (as shown by the evaluation of the rating list)
+
+```{r}
+unseller <-order_reviews%>%
+  full_join(orders)%>%
+  full_join(order_items)%>%
+  full_join(sellers)
+
+unseller%>%
+  group_by(seller_id)%>%
+  summarise(averageEV = mean(review_score))%>%
+  arrange(desc(averageEV))
+idsel<- "269c5fc9fcadee614364c3620c30a1f9"
+
+snip<- sellers%>%
+  filter(seller_id == idsel)
+
+print(snip)
+
+```
+
+
+
+Q.7 Display the product category with the most orders and display in a frequency chart the rating of the reviews of all its products.
+```{r}
+MOrder<- order_reviews%>%
+  inner_join(orders)%>%
+  full_join(order_items)%>%
+  full_join(products)%>%
+  group_by(product_category_name)%>%
+  count(order_id)%>%
+  summarise(mostOrder = sum(n))%>%
+  arrange(desc(mostOrder))
+
+print(MOrder)
+
+most<- order_reviews%>%
+  inner_join(orders)%>%
+  inner_join(order_items)%>%
+  inner_join(products)%>%
+  filter(product_category_name == "cama_mesa_banho")%>%
+  count(review_score)
+
+print(most)
+
+```
+
+
+Q.8 Show in a diagram the shipping costs for the product with the most sales (total number of orders delivered). In the diagram place the delivery date on the horizontal axis and the shipping cost on the horizontal axis. Each point on the chart should be colored based on its rating (points without rating will receive the average rating of this product)
+
+```{r}
+mostorder<- order_reviews%>%
+  inner_join(orders)%>%
+  full_join(order_items)%>%
+  full_join(products)%>%
+  group_by(product_category_name)%>%
+  count(order_delivered_customer_date)%>%
+  summarise(mostOrder = sum(n))%>%
+  arrange(desc(mostOrder))
+
+
+
+shipCost<- orders%>%
+  inner_join(order_items)%>%
+  inner_join(products)%>%
+  full_join(order_reviews)%>%
+  filter(product_category_name == "cama_mesa_banho")
+
+  is.na_replace_mean <- shipCost$review_score                            # Duplicate first column
+  x_num_mean <- mean(is.na_replace_mean, na.rm = TRUE)        # Calculate mean
+  is.na_replace_mean[is.na(is.na_replace_mean)] <- x_num_mean
+  shipCost$review_score<-is.na_replace_mean
+  
+    is.na_rep_mean <- shipCost$freight_value                          # Duplicate first column
+  x_mean <- mean(is.na_rep_mean, na.rm = TRUE)        # Calculate mean
+  is.na_rep_mean[is.na(is.na_rep_mean)] <- x_mean
+  shipCost$freight_value<-is.na_rep_mean
+  
+ggplot(shipCost) +
+  aes(
+    x = order_delivered_customer_date,
+    y = freight_value,
+    colour = review_score
+  ) +
+  geom_point(shape = "circle", size = 1.5) +
+  scale_color_viridis_c(option = "viridis", direction = 1) +
+  theme_minimal()
+
+```
+
+Q.9 Find the product category that had the 6th worst average of ratings. Show in a diagram the ratings that existed for the products purchased from this category. Horizontal axis purchase date (purchase approval date), vertical axis product evaluation
+
+```{r}
+order_reviews%>%
+  inner_join(orders)%>%
+  inner_join(order_items)%>%
+  inner_join(products)%>%
+  group_by(product_category_name)%>%
+  summarise(aveRate = mean(review_score, na.rm= T))%>%
+  arrange(aveRate)
+
+sixWorst<- orders%>%
+  inner_join(order_reviews)%>%
+  inner_join(order_items)%>%
+  inner_join(products)%>%
+  filter(product_category_name == "casa_conforto_2")%>%
+  group_by(order_purchase_timestamp)%>%
+  arrange(review_score)
+
+sixWorst %>%
+ filter(!(review_comment_message %in% c("Boa tarde!\r\nQuero saber onde está minha mercadoria", 
+"Estou aguardando minha mercadoria.\r\nNão recebi nenhum contato sobre o atraso na entrega minha mercadoria"
+)) | is.na(review_comment_message)) %>%
+ ggplot() +
+  aes(x = order_purchase_timestamp, y = review_score) +
+  geom_line(size = 0.5, colour = "#112446") +
+  theme_minimal()
+
+```
